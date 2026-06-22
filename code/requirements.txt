@@ -1,0 +1,11 @@
+numpy
+pandas
+pillow
+python-dotenv
+google-generativeai
+reportlab
+scikit-learn
+streamlit
+plotly
+joblib
+shap
