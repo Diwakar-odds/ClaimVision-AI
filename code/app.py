@@ -18,6 +18,12 @@ from PIL import Image
 from report_generator import generate_pdf_report
 from src.image_analyzer import analyze_image
 
+import yaml
+try:
+    import streamlit_authenticator as stauth
+except ImportError:
+    stauth = None
+
 
 APP_TITLE = "ClaimVision AI"
 APP_SUBTITLE = "AI-Powered Damage Claim Verification"
@@ -27,6 +33,42 @@ TEMP_IMAGE_PATH = Path("temp.jpg")
 OUTPUT_CSV_PATH = REPO_ROOT / "dataset" / "output.csv"
 MAX_FILE_SIZE = 25 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+AUTH_CONFIG_PATH = Path(__file__).parent / "auth.yaml"
+
+
+def ensure_auth_config():
+    if not AUTH_CONFIG_PATH.exists():
+        os.makedirs(AUTH_CONFIG_PATH.parent, exist_ok=True)
+        default = {
+            "credentials": {
+                "usernames": {
+                    "admin": {
+                        "email": "admin@claimvision.ai",
+                        "name": "Admin",
+                        "password": "$2b$12$rGtJKo3o4t5EtOPW9LTbKu34HLnk5F5EJjy/RPv/BWT6eRmGMDgAG",
+                    }
+                }
+            },
+            "cookie": {
+                "name": "claimvision_auth",
+                "key": "claimvision_secret_key_change_me_in_production",
+                "expiry_days": 30,
+            },
+        }
+        with open(AUTH_CONFIG_PATH, "w") as f:
+            yaml.dump(default, f, default_flow_style=False)
+    return AUTH_CONFIG_PATH
+
+
+def load_auth_config():
+    ensure_auth_config()
+    with open(AUTH_CONFIG_PATH) as f:
+        return yaml.safe_load(f)
+
+
+def save_auth_config(config):
+    with open(AUTH_CONFIG_PATH, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
 
 
 def validate_uploaded_file(uploaded_file):
@@ -3275,45 +3317,102 @@ def main():
     inject_css()
     render_chatbot_widget()
 
-    if "analysis_result" not in st.session_state:
-        st.session_state["analysis_result"] = None
-    if "analysis_completed" not in st.session_state:
-        st.session_state["analysis_completed"] = False
-    if "pdf_report_path" not in st.session_state:
-        st.session_state["pdf_report_path"] = None
-    if "report_error" not in st.session_state:
-        st.session_state["report_error"] = None
-    if "report_success" not in st.session_state:
-        st.session_state["report_success"] = False
-    if "confidence_score" not in st.session_state:
-        st.session_state["confidence_score"] = None
-    if "risk_score" not in st.session_state:
-        st.session_state["risk_score"] = None
-    if "risk_level" not in st.session_state:
-        st.session_state["risk_level"] = None
-    if "risk_reasons" not in st.session_state:
-        st.session_state["risk_reasons"] = []
-    if "explanation" not in st.session_state:
-        st.session_state["explanation"] = None
-    if "cost_estimate" not in st.session_state:
-        st.session_state["cost_estimate"] = None
-    if "claim_history" not in st.session_state:
-        st.session_state["claim_history"] = None
-    if "uploaded_images" not in st.session_state:
-        st.session_state["uploaded_images"] = []
-    if "latest_claim" not in st.session_state:
-        st.session_state["latest_claim"] = None
-    if "analysis_stage" not in st.session_state:
-        st.session_state["analysis_stage"] = ""
-    if "analysis_progress" not in st.session_state:
-        st.session_state["analysis_progress"] = 0
-    if "analysis_status" not in st.session_state:
-        st.session_state["analysis_status"] = "Idle"
-    if "analyzing" not in st.session_state:
-        st.session_state["analyzing"] = False
+    # --- AUTHENTICATION ---
+    if stauth is None:
+        st.error(
+            "**streamlit-authenticator** is required. "
+            "Install it with: `pip install streamlit-authenticator`"
+        )
+        return
+
+    if "auth_mode" not in st.session_state:
+        st.session_state["auth_mode"] = "login"
+
+    config = load_auth_config()
+    authenticator = stauth.Authenticate(
+        config["credentials"],
+        config["cookie"]["name"],
+        config["cookie"]["key"],
+        config["cookie"]["expiry_days"],
+    )
+
+    if st.session_state["auth_mode"] == "register":
+        try:
+            reg_result = authenticator.register_user(
+                location="main", captcha=False, key="register_user"
+            )
+            if reg_result:
+                status, username, name = reg_result
+                if status == "New user registered":
+                    st.success(
+                        f"Account created for **{username}**! You can now log in."
+                    )
+                    save_auth_config(config)
+                    st.session_state["auth_mode"] = "login"
+                    st.rerun()
+                elif status:
+                    st.info(status)
+        except Exception as e:
+            st.error(str(e))
+
+        if st.button("← Back to login", key="back_to_login_btn"):
+            st.session_state["auth_mode"] = "login"
+            st.rerun()
+        return
+
+    auth_result = authenticator.login(location="main", key="login")
+    if auth_result:
+        name, authentication_status, username = auth_result
+        st.session_state["auth_name"] = name
+        st.session_state["auth_username"] = username
+        st.session_state["authentication_status"] = authentication_status
+    else:
+        authentication_status = st.session_state.get("authentication_status")
+
+    if authentication_status is None:
+        st.markdown("---")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"### Welcome to {APP_TITLE}")
+            st.markdown(f"*{APP_SUBTITLE}*")
+        with col2:
+            if st.button("Register new account", key="goto_register_btn"):
+                st.session_state["auth_mode"] = "register"
+                st.rerun()
+        return
+    elif not authentication_status:
+        return
+
+    # --- SESSION STATE INIT ---
+    init_state = [
+        ("analysis_result", None),
+        ("analysis_completed", False),
+        ("pdf_report_path", None),
+        ("report_error", None),
+        ("report_success", False),
+        ("confidence_score", None),
+        ("risk_score", None),
+        ("risk_level", None),
+        ("risk_reasons", []),
+        ("explanation", None),
+        ("cost_estimate", None),
+        ("claim_history", None),
+        ("uploaded_images", []),
+        ("latest_claim", None),
+        ("analysis_stage", ""),
+        ("analysis_progress", 0),
+        ("analysis_status", "Idle"),
+        ("analyzing", False),
+    ]
+    for key, default in init_state:
+        if key not in st.session_state:
+            st.session_state[key] = default
     init_workflow_state()
 
     active_section = render_sidebar()
+
+    st.sidebar.markdown(f"👤 **{st.session_state['auth_name']}**")
+    authenticator.logout("Logout", "sidebar", key="logout_btn")
     if active_section in ("Overview", "Review Workspace", "AI Analysis", "Report"):
         render_mobile_brand_bar()
         render_hero()

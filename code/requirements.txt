@@ -12,3 +12,5 @@ shap
 opencv-python
 ruff
 black
+streamlit-authenticator
+pyyaml
