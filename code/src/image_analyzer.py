@@ -14,6 +14,29 @@ model = genai.GenerativeModel(
     "gemini-2.5-flash"
 )
 
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+MAX_FILE_SIZE = 25 * 1024 * 1024
+
+
+def validate_image_file(image_path):
+    ext = os.path.splitext(str(image_path))[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return False, f"Unsupported file type '{ext}'. Only JPG, JPEG, and PNG images are allowed."
+
+    file_size = os.path.getsize(image_path)
+    if file_size == 0:
+        return False, "The uploaded file is empty."
+    if file_size > MAX_FILE_SIZE:
+        return False, f"File size exceeds {MAX_FILE_SIZE // (1024 * 1024)} MB."
+
+    try:
+        with Image.open(image_path) as img:
+            img.verify()
+    except Exception:
+        return False, "The image appears to be corrupted or unreadable."
+
+    return True, ""
+
 
 def _estimate_repair_cost(claim_object, severity):
     severity = str(severity or "unknown").lower()
@@ -136,6 +159,18 @@ def _apply_result_contract(result, claim_object):
 
 
 def analyze_image(image_path, claim_object):
+
+    is_valid, error = validate_image_file(image_path)
+    if not is_valid:
+        return _apply_result_contract({
+            "object_type": claim_object,
+            "issue_type": "unknown",
+            "object_part": "unknown",
+            "damage_visible": False,
+            "severity": "unknown",
+            "valid_image": False,
+            "quality_flags": [f"validation_error: {error}"]
+        }, claim_object)
 
     image = Image.open(image_path)
 

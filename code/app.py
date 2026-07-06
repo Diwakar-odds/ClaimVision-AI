@@ -25,6 +25,27 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LOGO_PATH = REPO_ROOT / "assets" / "logo.png"
 TEMP_IMAGE_PATH = Path("temp.jpg")
 OUTPUT_CSV_PATH = REPO_ROOT / "dataset" / "output.csv"
+MAX_FILE_SIZE = 25 * 1024 * 1024
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
+
+def validate_uploaded_file(uploaded_file):
+    errors = []
+    if uploaded_file is None:
+        errors.append("No file was uploaded.")
+        return errors
+
+    ext = Path(uploaded_file.name).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        errors.append(f"Unsupported file type '{ext}'. Only JPG, JPEG, and PNG images are allowed.")
+
+    file_size = len(uploaded_file.getbuffer())
+    if file_size == 0:
+        errors.append("The uploaded file is empty.")
+    elif file_size > MAX_FILE_SIZE:
+        errors.append(f"File size exceeds {MAX_FILE_SIZE // (1024 * 1024)} MB.")
+
+    return errors
 
 
 def get_logo_image():
@@ -3242,6 +3263,9 @@ def create_pdf_report(
 
 
 def save_uploaded_image(uploaded_file):
+    errors = validate_uploaded_file(uploaded_file)
+    if errors:
+        raise ValueError("; ".join(errors))
     TEMP_IMAGE_PATH.write_bytes(uploaded_file.getbuffer())
     return str(TEMP_IMAGE_PATH)
 
@@ -3370,23 +3394,28 @@ def main():
                 )
 
             if analyze_clicked and uploaded_files:
-                saved_image_path = save_uploaded_image(uploaded_files[0])
-                start_workflow()
-                st.session_state["analysis_completed"] = False
-                st.session_state["pdf_report_path"] = None
-                st.session_state["report_error"] = None
-                st.session_state["report_success"] = False
+                file_errors = validate_uploaded_file(uploaded_files[0])
+                if file_errors:
+                    for err in file_errors:
+                        st.error(err)
+                else:
+                    saved_image_path = save_uploaded_image(uploaded_files[0])
+                    start_workflow()
+                    st.session_state["analysis_completed"] = False
+                    st.session_state["pdf_report_path"] = None
+                    st.session_state["report_error"] = None
+                    st.session_state["report_success"] = False
 
-                status_slot = st.empty()
-                loader_slot = st.empty()
-                progress_slot = st.empty()
-                status_slot.markdown(verification_badge("Processing"), unsafe_allow_html=True)
-                with loader_slot.container():
-                    render_workflow_card()
-                progress_bar = run_verification_progress(progress_slot, loader_slot)
+                    status_slot = st.empty()
+                    loader_slot = st.empty()
+                    progress_slot = st.empty()
+                    status_slot.markdown(verification_badge("Processing"), unsafe_allow_html=True)
+                    with loader_slot.container():
+                        render_workflow_card()
+                    progress_bar = run_verification_progress(progress_slot, loader_slot)
 
-                with st.spinner("Gemini is reviewing the uploaded evidence..."):
-                    raw_result = analyze_image(saved_image_path, claim_object)
+                    with st.spinner("Gemini is reviewing the uploaded evidence..."):
+                        raw_result = analyze_image(saved_image_path, claim_object)
                     claim_history = load_user_history(claim_object)
                     st.session_state["claim_history"] = claim_history
                     completed_result = ensure_analysis_result_contract(
