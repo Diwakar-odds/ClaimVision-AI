@@ -3309,6 +3309,8 @@ def main():
         st.session_state["analysis_progress"] = 0
     if "analysis_status" not in st.session_state:
         st.session_state["analysis_status"] = "Idle"
+    if "analyzing" not in st.session_state:
+        st.session_state["analyzing"] = False
     init_workflow_state()
 
     active_section = render_sidebar()
@@ -3371,9 +3373,10 @@ def main():
             st.markdown("### Review Actions")
             action_cols = st.columns([0.35, 0.65])
             with action_cols[0]:
+                is_analyzing = st.session_state["analyzing"]
                 analyze_clicked = st.button(
-                    "Run AI Analysis",
-                    disabled=not uploaded_files,
+                    "Analyzing image..." if is_analyzing else "Run AI Analysis",
+                    disabled=not uploaded_files or is_analyzing,
                     use_container_width=True,
                 )
             with action_cols[1]:
@@ -3399,6 +3402,7 @@ def main():
                     for err in file_errors:
                         st.error(err)
                 else:
+                    st.session_state["analyzing"] = True
                     saved_image_path = save_uploaded_image(uploaded_files[0])
                     start_workflow()
                     st.session_state["analysis_completed"] = False
@@ -3414,7 +3418,7 @@ def main():
                         render_workflow_card()
                     progress_bar = run_verification_progress(progress_slot, loader_slot)
 
-                    with st.spinner("Gemini is reviewing the uploaded evidence..."):
+                    with st.spinner("Analyzing image..."):
                         raw_result = analyze_image(saved_image_path, claim_object)
                     claim_history = load_user_history(claim_object)
                     st.session_state["claim_history"] = claim_history
@@ -3430,6 +3434,7 @@ def main():
                         build_output_record(claim_object, user_claim, saved_image_path, completed_result)
                     )
                     st.session_state["analysis_completed"] = True
+                    st.session_state["analyzing"] = False
 
                 if st.session_state["analysis_completed"]:
                     try:
@@ -3480,6 +3485,7 @@ def main():
                         st.session_state["report_success"] = False
                         progress_bar.progress(100, text="Analysis Complete")
                         complete_workflow("AI analysis completed, but the PDF report could not be generated.")
+                        st.session_state["analyzing"] = False
                 st.rerun()
 
             if st.session_state["analysis_result"]:
