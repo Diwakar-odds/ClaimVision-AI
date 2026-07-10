@@ -10,3 +10,5 @@ plotly
 joblib
 shap
 opencv-python
+ruff
+black
