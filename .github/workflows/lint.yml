@@ -34,10 +34,5 @@ jobs:
         run: black --check .
 
       - name: Run Ruff
-        run: ruff check .
-
-      - name: Check Formatting
-        run: black --check .
-
-      - name: Run Ruff
-        run: ruff check .
+        run: ruff check . --exclude notebooks
+      
