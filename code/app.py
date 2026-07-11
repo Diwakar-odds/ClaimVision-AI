@@ -19,6 +19,10 @@ from report_generator import generate_pdf_report
 from src.image_analyzer import analyze_image
 
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv()
+
 try:
     import streamlit_authenticator as stauth
 except ImportError:
@@ -39,6 +43,7 @@ AUTH_CONFIG_PATH = Path(__file__).parent / "auth.yaml"
 def ensure_auth_config():
     if not AUTH_CONFIG_PATH.exists():
         os.makedirs(AUTH_CONFIG_PATH.parent, exist_ok=True)
+        cookie_key = os.getenv("CLAIMVISION_AUTH_KEY", "claimvision_secret_key_change_me_in_production")
         default = {
             "credentials": {
                 "usernames": {
@@ -51,7 +56,7 @@ def ensure_auth_config():
             },
             "cookie": {
                 "name": "claimvision_auth",
-                "key": "claimvision_secret_key_change_me_in_production",
+                "key": cookie_key,
                 "expiry_days": 30,
             },
         }
