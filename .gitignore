@@ -22,6 +22,9 @@ temp.jpg
 # Streamlit cache
 .streamlit/secrets.toml
 
+# Auth credentials (generated at runtime)
+code/auth.yaml
+
 # OS files
 .DS_Store
 Thumbs.db
