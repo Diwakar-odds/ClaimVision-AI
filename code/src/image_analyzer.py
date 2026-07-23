@@ -16,9 +16,13 @@ model = genai.GenerativeModel(
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 MAX_FILE_SIZE = 25 * 1024 * 1024
+DEFAULT_PROMPT = "Analyze the uploaded image for insurance claim assessment and return JSON."
 
 
 def validate_image_file(image_path):
+    if not os.path.exists(image_path) or not os.path.isfile(image_path):
+        return False, "File not found."
+
     ext = os.path.splitext(str(image_path))[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         return False, f"Unsupported file type '{ext}'. Only JPG, JPEG, and PNG images are allowed."
@@ -35,7 +39,7 @@ def validate_image_file(image_path):
     except Exception:
         return False, "The image appears to be corrupted or unreadable."
 
-    return True, ""
+    return True, None
 
 
 def _estimate_repair_cost(claim_object, severity):
@@ -159,7 +163,6 @@ def _apply_result_contract(result, claim_object):
 
 
 def analyze_image(image_path, claim_object):
-
     is_valid, error = validate_image_file(image_path)
     if not is_valid:
         return _apply_result_contract({
@@ -172,89 +175,21 @@ def analyze_image(image_path, claim_object):
             "quality_flags": [f"validation_error: {error}"]
         }, claim_object)
 
-    image = Image.open(image_path)
-
-    prompt = f"""
-You are an insurance damage reviewer.
-
-Analyze the image carefully.
-
-IMPORTANT:
-Return ONLY valid JSON.
-Do not include markdown.
-Do not include explanations.
-
-Allowed issue_type values:
-dent
-scratch
-crack
-glass_shatter
-broken_part
-missing_part
-torn_packaging
-crushed_packaging
-water_damage
-stain
-none
-unknown
-
-Allowed severity values:
-none
-low
-medium
-high
-unknown
-
-Determine:
-1. Visible damage type
-2. Object part
-3. Whether damage is visible
-4. Whether image is valid
-5. Quality problems
-
-Return ONLY:
-
-{{
-  "object_type": "{claim_object}",
-  "issue_type": "",
-  "object_part": "",
-  "damage_visible": true,
-  "severity": "",
-  "valid_image": true,
-  "quality_flags": [],
-  "confidence_score": 0,
-  "fraud_risk": "",
-  "repair_estimate": [],
-  "estimated_cost": ""
-}}
-"""
-
     try:
-        response = model.generate_content(
-            [prompt, image]
-        )
+        with Image.open(image_path) as image:
+            response = model.generate_content([DEFAULT_PROMPT, image])
 
         cleaned = (
-            response.text
+            str(getattr(response, "text", ""))
             .replace("```json", "")
             .replace("```", "")
             .strip()
         )
-
-        return _apply_result_contract(json.loads(cleaned), claim_object)
-
+        parsed_result = json.loads(cleaned) if cleaned else {}
     except Exception as e:
-
         print(f"Gemini Error: {e}")
+        parsed_result = {
+            "quality_flags": ["manual_review_required"]
+        }
 
-        return _apply_result_contract({
-            "object_type": claim_object,
-            "issue_type": "unknown",
-            "object_part": "unknown",
-            "damage_visible": False,
-            "severity": "unknown",
-            "valid_image": False,
-            "quality_flags": [
-                "manual_review_required"
-            ]
-        }, claim_object)
+    return _apply_result_contract(parsed_result, claim_object)
